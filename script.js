@@ -4,14 +4,17 @@ btn.addEventListener('click', () =>{
     let input = document.createElement('input');
     input.type = 'file';
     input.accept = 'image/*';
+    input.multiple = 'multiple';
     input.click();
 
+
     input.onchange = async (event) => {
-        let file = event.target.files[0];
-        if (file){
-            let picture = URL.createObjectURL(file);
-            let bmp = await imageToBitmap(picture);
-            Main(bmp);
+        for (let file of event.target.files){
+            if (file){
+                let picture = URL.createObjectURL(file);
+                let bmp = await imageToBitmap(picture);
+                Main(bmp);
+            }
         }
     }
 })
@@ -32,16 +35,20 @@ async function Main(bmp){
     container.append(canvas);
 
     let ctx = canvas.getContext('2d');
-    ctx.drawImage(bmp, 0, 0);
+    // ctx.drawImage(bmp, 0, 0);
 
     let imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
     let grayData = grayScale(imageData);
     let gaussianData = gaussian(grayData);
     let sobelData = sobelEdges(gaussianData);
-    let binarized = binarize(sobelData, 30);
-    ctx.putImageData(binarized, 0, 0);
-    let contours = detectContours(binarized);
+    let binarized = binarize(sobelData, 64);
+    // ctx.putImageData(binarized, 0, 0);
+    let contours = detectContours(binarized, ctx);
     let plates = detectPlates(contours, ctx, imageData);
+    for (let plate of plates){
+        let plateData = ctx.getImageData(plate.x, plate.y, plate.width, plate.height);
+        ctx.drawImage(plateData, 0, 0);
+    }
 }
 
 function grayScale(imageData){
@@ -170,7 +177,7 @@ function binarize(imageData, threshold = 30){
     return imageData;
 }
 
-function detectContours(imageData){
+function detectContours(imageData, ctx){
 
     function dfsFill(x, y){
         let queue = [[x, y]]
@@ -207,6 +214,12 @@ function detectContours(imageData){
         }
     }
 
+    // ctx.strokeStyle = 'red';
+    // ctx.lineWidth = 3;
+    // for (let c of contours){
+    //     ctx.strokeRect(c.x, c.y, c.width, c.height);
+    // }
+
     return contours;
 }
 
@@ -223,7 +236,7 @@ function detectPlates(contours, ctx, imageData){
                         edgeCount++;
                 }
             }
-            if (edgeCount / (width * height) > 0.2)
+            if (edgeCount / (width * height) > 0.1)
                 bettercandidates.push(candidate);
         }
         
@@ -231,22 +244,37 @@ function detectPlates(contours, ctx, imageData){
         return bettercandidates;        
     }
 
+
+
     let plates = [];
     let secondCandidates = [];
     let candidates = [];
     for (let contour of contours){
         let area = contour.width * contour.height;
         let aspect = contour.width / contour.height;
-        if (aspect > 4 && aspect < 5 && area > 2000 && area < 80000){
+        if (aspect < 5.5 && aspect > 3 && area < 80000 && area > 2000){
             candidates.push(contour);
         }
     }
+
+    // ctx.strokeStyle = 'blue';
+    // ctx.lineWidth = 2;
+    // for (let plate of candidates){
+    //     ctx.strokeRect(plate.x, plate.y, plate.width, plate.height);
+    // }
+
     secondCandidates = edgeFiltered(candidates);
+
+    // ctx.strokeStyle = 'yellow';
+    // ctx.lineWidth = 2;
+    // for (let plate of secondCandidates){
+    //     ctx.strokeRect(plate.x, plate.y, plate.width, plate.height);
+    // }
 
     for (let plate of secondCandidates){
         let canadidateData = ctx.getImageData(plate.x, plate.y, plate.width, plate.height);
-        let characters = detectContours(canadidateData).length;
-        if (characters > 2 && characters < 30){
+        let characters = detectContours(canadidateData, ctx).length;
+        if (characters > 3 && characters < 20){
             plates.push(plate);
         }
     }
@@ -254,8 +282,10 @@ function detectPlates(contours, ctx, imageData){
 
     ctx.strokeStyle = 'green';
     ctx.lineWidth = 10;
-    for (let plate of plates){
-        ctx.strokeRect(plate.x, plate.y, plate.width, plate.height);
-    }
+    // for (let plate of plates){
+    //     ctx.strokeRect(plate.x, plate.y, plate.width, plate.height);
+    // }
+
+    return plates;
 }
 
