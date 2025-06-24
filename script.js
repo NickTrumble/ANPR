@@ -4,7 +4,7 @@ btn.addEventListener('click', () =>{
     let input = document.createElement('input');
     input.type = 'file';
     input.accept = 'image/*';
-    input.multiple = 'multiple';
+    input.multiple = true;
     input.click();
 
 
@@ -28,26 +28,34 @@ async function imageToBitmap(imgSrc){
 
 async function Main(bmp){
     let container = document.getElementById('container')
-    let canvas = document.createElement('canvas');
-    canvas.width = bmp.width;
-    canvas.height = bmp.height;
-    canvas.className = 'centered';
-    container.append(canvas);
 
-    let ctx = canvas.getContext('2d');
-    // ctx.drawImage(bmp, 0, 0);
+    let secretCanvas = document.createElement('canvas');
+    secretCanvas.width = bmp.width;
+    secretCanvas.height = bmp.height;
 
-    let imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    let ctx = secretCanvas.getContext('2d');
+    ctx.drawImage(bmp, 0, 0);
+
+    let imageData = ctx.getImageData(0, 0, secretCanvas.width, secretCanvas.height);
     let grayData = grayScale(imageData);
     let gaussianData = gaussian(grayData);
-    let sobelData = sobelEdges(gaussianData);
-    let binarized = binarize(sobelData, 64);
-    // ctx.putImageData(binarized, 0, 0);
+    let sobelData = sobelEdges(structuredClone(gaussianData));
+    let binarized = binarize(sobelData);
+    ctx.putImageData(binarized, 0, 0);
+
     let contours = detectContours(binarized, ctx);
     let plates = detectPlates(contours, ctx, imageData);
+
+    ctx.drawImage(bmp, 0, 0);
     for (let plate of plates){
+        let plateCanvas = document.createElement('canvas');
+        plateCanvas.className = 'centered';
+        let ctx2 = plateCanvas.getContext('2d');
+        plateCanvas.width = plate.width;
+        plateCanvas.height = plate.height;
         let plateData = ctx.getImageData(plate.x, plate.y, plate.width, plate.height);
-        ctx.drawImage(plateData, 0, 0);
+        ctx2.putImageData(plateData, 0, 0);
+        container.append(plateCanvas);
     }
 }
 
@@ -92,9 +100,9 @@ function gaussian(imageData){
 
     let bounds = Math.floor(size / 2);
 
-    for (let j = 1; j < height - 1; j++){
-        for (let i = 1; i < width - 1; i++){
-            let r = 0, g = 0, b = 0;
+    for (let j = bounds; j < height - bounds; j++){
+        for (let i = bounds; i < width - bounds; i++){
+            let r = 0.0, g = 0.0, b = 0.0;
 
             for (let x = -bounds; x <= bounds; x++){
                 for (let y = -bounds; y <= bounds; y++){
@@ -115,7 +123,6 @@ function gaussian(imageData){
 
         }
     }
-
     for (let i = 0; i < data.length; i++){
         data[i] = tempData[i];
     }
@@ -134,12 +141,11 @@ function sobelEdges(imageData){
         [1, 2, 1]
     ];
     let {data, width, height} = imageData;
-    let gx = 1.0;
-    let gy = 1.0;
     let magnitudes = [];
     let maxMag = 0;
-    for (let i = 1; i < width - 1; i++){
-        for (let j = 0; j < height - 1; j++){
+    let gx = 1; let gy = 1;
+    for (let j = 1; j < height - 1; j++){
+        for (let i = 1; i < width - 1; i++){
             gx = 0;
             gy = 0;
             for (let x = -1; x <= 1; x++){
@@ -151,7 +157,8 @@ function sobelEdges(imageData){
             }
  
             let pIndex = j * width + i;
-            magnitudes[pIndex] = Math.hypot(gx, gy);
+            let mag = Math.sqrt(gx * gx + gy * gy);
+            magnitudes[pIndex] = mag;
             if (maxMag < magnitudes[pIndex])
                 maxMag = magnitudes[pIndex];
 
@@ -167,11 +174,10 @@ function sobelEdges(imageData){
     return imageData;
 }
 
-function binarize(imageData, threshold = 30){
+function binarize(imageData, threshold = 50){
     let data = imageData.data;
     for (let i = 0; i < data.length; i+= 4){
-        let avg = (data[i] + data[i + 1] + data[i + 2]) / 3;
-        let val = (avg > threshold) ? 255 : 0;
+        let val = (data[i] > threshold) ? 255 : 0;
         data[i] = data[i + 1] = data[i + 2] = val;
     }
     return imageData;
@@ -214,12 +220,6 @@ function detectContours(imageData, ctx){
         }
     }
 
-    // ctx.strokeStyle = 'red';
-    // ctx.lineWidth = 3;
-    // for (let c of contours){
-    //     ctx.strokeRect(c.x, c.y, c.width, c.height);
-    // }
-
     return contours;
 }
 
@@ -252,40 +252,39 @@ function detectPlates(contours, ctx, imageData){
     for (let contour of contours){
         let area = contour.width * contour.height;
         let aspect = contour.width / contour.height;
-        if (aspect < 5.5 && aspect > 3 && area < 80000 && area > 2000){
+        if (aspect < 5.5 && aspect > 3 && area < 80000 && area > 5000){
             candidates.push(contour);
         }
     }
 
-    // ctx.strokeStyle = 'blue';
-    // ctx.lineWidth = 2;
-    // for (let plate of candidates){
-    //     ctx.strokeRect(plate.x, plate.y, plate.width, plate.height);
-    // }
+    ctx.strokeStyle = 'blue';
+    ctx.lineWidth = 2;
+    for (let plate of candidates){
+        ctx.strokeRect(plate.x, plate.y, plate.width, plate.height);
+    }
 
     secondCandidates = edgeFiltered(candidates);
 
-    // ctx.strokeStyle = 'yellow';
-    // ctx.lineWidth = 2;
-    // for (let plate of secondCandidates){
-    //     ctx.strokeRect(plate.x, plate.y, plate.width, plate.height);
-    // }
+    ctx.strokeStyle = 'yellow';
+    ctx.lineWidth = 2;
+    for (let plate of secondCandidates){
+        ctx.strokeRect(plate.x, plate.y, plate.width, plate.height);
+    }
 
     for (let plate of secondCandidates){
         let canadidateData = ctx.getImageData(plate.x, plate.y, plate.width, plate.height);
         let characters = detectContours(canadidateData, ctx).length;
-        if (characters > 3 && characters < 20){
+        if (characters > 5 && characters < 30){
             plates.push(plate);
         }
     }
 
 
     ctx.strokeStyle = 'green';
-    ctx.lineWidth = 10;
-    // for (let plate of plates){
-    //     ctx.strokeRect(plate.x, plate.y, plate.width, plate.height);
-    // }
+    ctx.lineWidth = 3;
+    for (let plate of plates){
+        ctx.strokeRect(plate.x, plate.y, plate.width, plate.height);
+    }
 
     return plates;
 }
-
